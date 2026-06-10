@@ -1,0 +1,7 @@
+prefix=/home/diallo/Documents/Data science projects/Fifa world cup 2026 winner/venv
+includedir=${prefix}/include
+ 
+Name: XF86BigFontProto
+Description: XF86BigFont extension headers
+Version: 1.2.0
+Cflags: -I${includedir}

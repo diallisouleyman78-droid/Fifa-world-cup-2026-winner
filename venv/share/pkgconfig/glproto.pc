@@ -1,0 +1,7 @@
+prefix=/home/diallo/Documents/Data science projects/Fifa world cup 2026 winner/venv
+includedir=${prefix}/include
+ 
+Name: GLProto
+Description: GL extension headers
+Version: 1.4.17
+Cflags: -I${includedir}

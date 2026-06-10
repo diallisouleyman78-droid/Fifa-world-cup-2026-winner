@@ -1,0 +1,7 @@
+prefix=/home/diallo/Documents/Data science projects/Fifa world cup 2026 winner/venv
+includedir=${prefix}/include
+
+Name: XwaylandProto
+Description: Xwayland extension headers
+Version: 1.0
+Cflags: -I${includedir}
