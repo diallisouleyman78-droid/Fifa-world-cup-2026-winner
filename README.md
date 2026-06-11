@@ -5,14 +5,18 @@ A data science project that uses historical World Cup data, FIFA rankings, and t
 ## Project Structure
 
 ```
-├── data/                   # Collected datasets
-│   ├── raw/                # Raw scraped data
-│   └── processed/          # Cleaned and feature-engineered data
-├── notebooks/              # Jupyter notebooks
-│   └── analysis.ipynb      # Main analysis notebook
-├── src/                    # Source scripts
-│   └── data_collection.py  # Data scraping utilities
-├── requirements.txt        # Python dependencies
+├── data/
+│   ├── raw/
+│   │   ├── results_1872_2026.csv                          # Historical international match results
+│   │   └── wc_2026_48_teams_fifa_rank_change_corrected.csv  # 2026 WC qualified teams & FIFA rankings
+│   └── interim/                                           # Intermediate transformed data
+├── models/                                                # Saved trained models
+├── notebooks/                                             # Jupyter notebooks for EDA & analysis
+├── src/                                                   # Source scripts & utilities
+├── main.py                                                # Main pipeline entry point
+├── simulation.py                                          # Monte Carlo tournament simulation
+├── .gitignore
+├── requirements.txt                                       # Python dependencies
 └── README.md
 ```
 
@@ -33,7 +37,7 @@ pip install -r requirements.txt
 
 ## Data Sources
 
-- Historical World Cup match results (1930–2022)
+- **`results_1872_2026.csv`** — Historical international football match results from 1872 to 2026 (date, home/away teams, scores, tournament, city, country)
+- **`wc_2026_48_teams_fifa_rank_change_corrected.csv`** — 48 qualified teams for the 2026 World Cup with FIFA ranking data
 - FIFA Men's World Rankings
 - Continental confederation affiliations
-- Team performance metrics (goals scored/conceded, win rates)

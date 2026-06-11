@@ -1,7 +1,0 @@
-prefix=/home/diallo/Documents/Data science projects/Fifa world cup 2026 winner/venv
-includedir=${prefix}/include
- 
-Name: AppleWMProto
-Description: AppleWM extension headers
-Version: 1.4.2
-Cflags: -I${includedir}
