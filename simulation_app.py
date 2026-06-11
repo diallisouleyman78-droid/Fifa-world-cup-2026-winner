@@ -8,7 +8,7 @@ import streamlit as st
 
 from src.data_loader import load_datasets, build_lookups
 from src.prediction import predict_match, get_h2h_score
-from src.tournament import simulate_tournament
+from src.tournament import simulate_tournament, run_aggregated_simulations
 from src.styling import (
     apply_global_styles,
     team_label,
@@ -486,11 +486,242 @@ def page_match_explorer():
     st.dataframe(context_data, use_container_width=True, hide_index=True)
 
 
+SIMULATION_RESULTS_PATH = Path(__file__).parent / "data" / "simulation_results.pkl"
+
+
+@st.cache_data
+def load_simulation_results():
+    """Load the precomputed 200-simulation results from the pickle file."""
+
+    import pickle
+
+    if not SIMULATION_RESULTS_PATH.exists():
+        return None
+
+    with open(SIMULATION_RESULTS_PATH, "rb") as f:
+        return pickle.load(f)
+
+
+def render_consensus_group_table(group_table):
+    """Render a consensus group table with qualified teams highlighted."""
+
+    table = group_table.copy()
+    table["team"] = table["team"].apply(team_label)
+
+    display = pd.DataFrame({
+        "Rank": table["consensus_rank"],
+        "Team": table["team"],
+        "Avg Pts": table["avg_points"].round(1),
+        "Avg W": table["avg_wins"].round(1),
+        "Avg D": table["avg_draws"].round(1),
+        "Avg L": table["avg_losses"].round(1),
+        "Avg GF": table["avg_goals_for"].round(1),
+        "Avg GA": table["avg_goals_against"].round(1),
+        "Avg GD": table["avg_goal_difference"].round(1),
+        "Qualify %": (table["qualify_prob"] * 100).round(1),
+        "_qualified": table["qualified"].values,
+    })
+
+    def highlight_qualified(row):
+        if row["_qualified"]:
+            return ["background-color: rgba(48, 209, 88, 0.25); color: white;"] * len(row)
+        return [""] * len(row)
+
+    styled = (
+        display.style
+        .apply(highlight_qualified, axis=1)
+        .format({"Qualify %": "{:.1f}%"})
+        .hide(axis="columns", subset=["_qualified"])
+    )
+
+    st.dataframe(styled, use_container_width=True, hide_index=True)
+
+
+def page_consensus():
+    set_page_background(PAGE_BACKGROUNDS["live_simulation"])
+    show_header()
+
+    st.subheader("📊 200-simulation consensus")
+
+    results = load_simulation_results()
+
+    if results is None:
+        st.warning(
+            "No precomputed results found. Run the following in a terminal first:\n\n"
+            "`python precompute_simulations.py`"
+        )
+        return
+
+    winner_counts = results["winner_counts"]
+    group_summary = results["group_match_summary"]
+    group_table_summary = results["group_table_summary"]
+    round_reach = results["round_reach"]
+    knockout_summary = results.get("knockout_summary", {})
+    representative_tournament = results.get("representative_tournament")
+    total_runs = results["n_simulations"]
+
+    st.write(
+        f"Combined results from **{total_runs} full tournament simulations** "
+        "(loaded from the precomputed file)."
+    )
+
+    # ---- Most likely champion ----
+    champion, champion_wins = winner_counts.most_common(1)[0]
+
+    st.markdown(
+        f"""
+        <div class="winner-card">
+            🏆 Most likely champion: {team_label(champion)} 🏆
+            <br>
+            <span style="font-size:18px;">
+            Won {champion_wins} of {total_runs} simulations ({champion_wins / total_runs:.1%})
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    show_trophies()
+
+    # ---- Group stage consensus ----
+    st.markdown("## Group stage — consensus results")
+
+    team_to_group = dict(zip(df_groups["nation"], df_groups["group"]))
+    group_summary = group_summary.copy()
+    group_summary["group"] = group_summary["home_team"].map(team_to_group)
+
+    st.caption("Green rows = teams that qualified (consensus top 2 across all runs).")
+
+    for group_name in sorted(g for g in group_summary["group"].dropna().unique()):
+        st.markdown(f"### Group {group_name}")
+
+        group_table = group_table_summary[group_table_summary["group"] == group_name]
+        render_consensus_group_table(group_table)
+
+        matches = group_summary[group_summary["group"] == group_name]
+
+        for _, m in matches.iterrows():
+            winner_text = (
+                "Draw"
+                if m["predicted_winner"] == "Draw"
+                else team_label(m["predicted_winner"])
+            )
+
+            st.markdown(
+                f"{team_label(m['home_team'])} "
+                f"**{m['predicted_home_goals']} - {m['predicted_away_goals']}** "
+                f"{team_label(m['away_team'])}"
+            )
+            st.markdown(
+                f"<span class='small-muted'>"
+                f"Most common scoreline: {m['scoreline_freq']:.0%} · "
+                f"Predicted winner: {winner_text}<br>"
+                f"Home win: {m['home_win_pct']:.1%} (Odds: {m['home_odds']:.2f}) · "
+                f"Draw: {m['draw_pct']:.1%} (Odds: {m['draw_odds']:.2f}) · "
+                f"Away win: {m['away_win_pct']:.1%} (Odds: {m['away_odds']:.2f})"
+                f"</span>",
+                unsafe_allow_html=True,
+            )
+
+    # ---- Knockout stage consensus ----
+    st.markdown("## Knockout stage — most likely matches")
+
+    st.write(
+        "Knockout matchups differ in every run. Below are the most common matchups "
+        "for each round across all simulations."
+    )
+
+    round_order = ["R32", "R16", "QF", "SF", "Final"]
+    for round_name in round_order:
+        if round_name in knockout_summary:
+            match = knockout_summary[round_name]
+            st.markdown(f'<div class="round-title">{round_name}</div>', unsafe_allow_html=True)
+
+            st.markdown(
+                f"""
+                <div class="team-card">
+                    {team_label(match['team1'])} 
+                    <strong>{match['home_goals']} - {match['away_goals']}</strong> 
+                    {team_label(match['team2'])}
+                    <br>
+                    <span class="small-muted">
+                    Most common matchup ({match['matchup_freq']:.0%} of runs) · 
+                    Most common scoreline ({match['scoreline_freq']:.0%} of this matchup)<br>
+                    {team_label(match['team1'])} win: {match['team1_win_pct']:.1%} (Odds: {match['team1_odds']:.2f}) · 
+                    {team_label(match['team2'])} win: {match['team2_win_pct']:.1%} (Odds: {match['team2_odds']:.2f})
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    # ---- Full knockout bracket from representative tournament ----
+    st.markdown("## Knockout stage — full bracket (representative tournament)")
+
+    st.write(
+        "Below is a full knockout bracket from one simulation where the most frequent champion won."
+    )
+
+    if representative_tournament:
+        knockout_results = representative_tournament["knockout_results"]
+        summary = representative_tournament["summary"]
+
+        for round_name in ["R32", "R16", "QF", "SF", "Final"]:
+            round_results = knockout_results[knockout_results["round"] == round_name]
+
+            st.markdown(f'<div class="round-title">{round_name}</div>', unsafe_allow_html=True)
+
+            for _, match in round_results.iterrows():
+                st.write(
+                    f"{team_label(match['home_team'])} "
+                    f"**{match['home_goals']} - {match['away_goals']}** "
+                    f"{team_label(match['away_team'])}"
+                )
+                st.write(f"Winner: {team_label(match['winner'])}")
+
+        st.markdown(
+            f"""
+            <div class="winner-card">
+                🏆 Winner: {team_label(summary['winner'])} 🏆
+                <br>
+                Runner-up: {team_label(summary['runner_up'])}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # ---- Knockout probabilities ----
+    st.markdown("## Knockout stage — round probabilities")
+
+    st.write(
+        "Knockout matchups differ in every run, so these are each team's chance "
+        "of reaching each stage across all simulations."
+    )
+
+    display = round_reach[round_reach["r16_prob"] > 0].copy()
+    display["team"] = display["team"].apply(team_label)
+
+    for col in ["r16_prob", "qf_prob", "sf_prob", "final_prob", "winner_prob"]:
+        display[col] = display[col].map(lambda x: f"{x * 100:.1f}%")
+
+    display = display.rename(columns={
+        "team": "Team",
+        "r16_prob": "Reach R16",
+        "qf_prob": "Reach QF",
+        "sf_prob": "Reach SF",
+        "final_prob": "Reach Final",
+        "winner_prob": "Win Cup",
+    })
+
+    st.dataframe(display, use_container_width=True, hide_index=True, height=620)
+
+
 def main():
     page = st.sidebar.radio(
         "Choose page",
         [
             "🏆 Precomputed probabilities",
+            "📊 200-simulation consensus",
             "🎮 Live simulation",
             "🔎 Match explorer",
         ],
@@ -498,6 +729,9 @@ def main():
 
     if page == "🏆 Precomputed probabilities":
         page_probabilities()
+
+    elif page == "📊 200-simulation consensus":
+        page_consensus()
 
     elif page == "🎮 Live simulation":
         page_live_simulation()
